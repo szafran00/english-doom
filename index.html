@@ -47,6 +47,13 @@
             font-weight: bold;
         }
 
+        #lives {
+            font-size: 24px;
+            font-weight: bold;
+            color: #f00;
+            margin-top: 5px;
+        }
+
         #energy.positive {
             color: #0f0;
         }
@@ -232,6 +239,27 @@
             left: 9px;
         }
 
+        #word-popup {
+            position: absolute;
+            top: 100px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px 20px;
+            border: 2px solid #0f0;
+            font-size: 20px;
+            color: #ff0;
+            pointer-events: none;
+            display: none;
+            animation: fadeInOut 2s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-10px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(10px); }
+        }
+
         #level-complete {
             position: absolute;
             top: 50%;
@@ -263,11 +291,14 @@
     <div id="ui">
         <div id="score">POZIOM: 1/10 | PUNKTY: 0</div>
         <div id="energy">ENERGIA: 0</div>
+        <div id="lives">ŻYCIA: ❤️❤️❤️</div>
     </div>
 
-    <div id="timer">45</div>
+    <div id="timer">30</div>
 
     <div id="crosshair"></div>
+
+    <div id="word-popup"></div>
 
     <div id="level-complete">
         <h2>POZIOM UKOŃCZONY!</h2>
@@ -295,7 +326,8 @@
         <p>🖱️ MYSZ - Celowanie | 🔫 LEWY PRZYCISK - Strzał</p>
         <p>⌨️ W/S lub ↑/↓ - Ruch | ⌨️ A/D lub ←/→ - Obrót</p>
         <p><strong>ZASADY:</strong></p>
-        <p>• Każdy poziom trwa ~45s - zabijaj potwory!</p>
+        <p>• Każdy poziom trwa 30s - zabijaj potwory!</p>
+        <p>• Masz 3 ŻYCIA - strzelaj zanim potwory uciekną!</p>
         <p>• Po poziomie - quiz z 10 pytań (EN↔PL)</p>
         <p>• Dobra odpowiedź = +10 ENERGII | Zła = -10 ENERGII</p>
         <p><strong>SYSTEM ENERGII:</strong></p>
@@ -371,7 +403,7 @@
         // Stan gry
         let gameState = 'menu';
         let currentLevel = 1;
-        let levelTimer = 45;
+        let levelTimer = 30;
         let levelStartTime = 0;
 
         let player = {
@@ -379,7 +411,8 @@
             y: 300,
             angle: 0,
             score: 0,
-            energy: 0
+            energy: 0,
+            lives: 3
         };
 
         let enemies = [];
@@ -436,29 +469,37 @@
         }
 
         function createEnemy() {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = 200 + Math.random() * 200;
+            // Potwory w losowych pozycjach na ekranie (ale nie za blisko gracza)
+            let x, y;
+            do {
+                x = 100 + Math.random() * 600;
+                y = 100 + Math.random() * 400;
+            } while (Math.sqrt((x - player.x) ** 2 + (y - player.y) ** 2) < 150);
+
             const word = allWords[Math.floor(Math.random() * allWords.length)];
 
             return {
-                x: player.x + Math.cos(angle) * distance,
-                y: player.y + Math.sin(angle) * distance,
+                x: x,
+                y: y,
                 word: word,
                 health: getEnemyHealth(),
                 maxHealth: getEnemyHealth(),
                 size: 30,
                 color: vocabulary.food.includes(word) ? '#f80' : '#f08',
-                speed: 0.3 + (currentLevel * 0.1) + Math.random() * 0.3
+                speed: 0.5 + (currentLevel * 0.05),
+                moveToEdge: true, // Będą uciekać do krawędzi
+                targetX: x < 400 ? -100 : 900,
+                targetY: y
             };
         }
 
         function initLevel() {
             enemies = [];
             particles = [];
-            levelTimer = 45;
+            levelTimer = 30;
             levelStartTime = Date.now();
 
-            const enemyCount = Math.min(3 + currentLevel, 8);
+            const enemyCount = Math.min(4 + currentLevel, 10);
             for (let i = 0; i < enemyCount; i++) {
                 enemies.push(createEnemy());
             }
@@ -471,7 +512,7 @@
 
             // Update timer
             const elapsed = Math.floor((Date.now() - levelStartTime) / 1000);
-            levelTimer = Math.max(0, 45 - elapsed);
+            levelTimer = Math.max(0, 30 - elapsed);
             document.getElementById('timer').textContent = levelTimer;
 
             if (levelTimer === 0) {
@@ -501,16 +542,30 @@
             player.x = Math.max(50, Math.min(750, player.x));
             player.y = Math.max(50, Math.min(550, player.y));
 
-            // Update wrogów
+            // Update wrogów - uciekają do krawędzi
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
-                const dx = player.x - enemy.x;
-                const dy = player.y - enemy.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist > 50) {
-                    enemy.x += (dx / dist) * enemy.speed;
-                    enemy.y += (dy / dist) * enemy.speed;
+                if (enemy.moveToEdge) {
+                    // Uciekaj do krawędzi
+                    const dx = enemy.targetX - enemy.x;
+                    const dy = enemy.targetY - enemy.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > 10) {
+                        enemy.x += (dx / dist) * enemy.speed;
+                        enemy.y += (dy / dist) * enemy.speed;
+                    } else {
+                        // Dotarł do krawędzi - ucieka!
+                        player.lives--;
+                        enemies.splice(i, 1);
+                        playSound(150, 0.3, 'sawtooth');
+
+                        if (player.lives <= 0) {
+                            gameOver();
+                            return;
+                        }
+                    }
                 }
             }
 
@@ -521,12 +576,6 @@
                 p.y += p.vy;
                 p.life--;
                 if (p.life <= 0) particles.splice(i, 1);
-            }
-
-            // Dodaj nowych wrogów
-            const maxEnemies = Math.min(3 + currentLevel, 8);
-            if (enemies.length < maxEnemies && Math.random() < 0.02) {
-                enemies.push(createEnemy());
             }
 
             updateUI();
@@ -551,52 +600,62 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, 800, 600);
 
-            // Rysuj wrogów
+            // Rysuj wszystkich wrogów - widok z góry, zawsze widoczni
             enemies.forEach(enemy => {
-                const dx = enemy.x - player.x;
-                const dy = enemy.y - player.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                const angle = Math.atan2(dy, dx) - player.angle;
+                // Prosta transformacja - wróg zawsze widoczny na ekranie
+                const screenX = enemy.x;
+                const screenY = enemy.y;
+                const size = enemy.size;
 
-                if (Math.abs(angle) < Math.PI / 2) {
-                    const screenX = 400 + Math.tan(angle) * 400;
-                    const size = (enemy.size * 300) / dist;
+                // Cień
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.beginPath();
+                ctx.ellipse(screenX, screenY + 5, size/2, size/4, 0, 0, Math.PI * 2);
+                ctx.fill();
 
-                    if (size > 0 && screenX > -size && screenX < 800 + size) {
-                        // Cień
-                        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                        ctx.fillRect(screenX - size/2, 580 - size/4, size, size/4);
+                // Ciało potwora
+                ctx.fillStyle = enemy.color;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, size/2, 0, Math.PI * 2);
+                ctx.fill();
 
-                        // Ciało
-                        ctx.fillStyle = enemy.color;
-                        ctx.beginPath();
-                        ctx.arc(screenX, 300 - size/2, size/2, 0, Math.PI * 2);
-                        ctx.fill();
+                // Oczy
+                ctx.fillStyle = '#ff0';
+                ctx.beginPath();
+                ctx.arc(screenX - size/5, screenY - size/8, size/10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(screenX + size/5, screenY - size/8, size/10, 0, Math.PI * 2);
+                ctx.fill();
 
-                        // Oczy
-                        ctx.fillStyle = '#ff0';
-                        ctx.beginPath();
-                        ctx.arc(screenX - size/4, 300 - size/2 - size/8, size/8, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.beginPath();
-                        ctx.arc(screenX + size/4, 300 - size/2 - size/8, size/8, 0, Math.PI * 2);
-                        ctx.fill();
+                // Źrenice
+                ctx.fillStyle = '#f00';
+                ctx.beginPath();
+                ctx.arc(screenX - size/5, screenY - size/8, size/20, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(screenX + size/5, screenY - size/8, size/20, 0, Math.PI * 2);
+                ctx.fill();
 
-                        // Pasek zdrowia
-                        const healthBarWidth = size;
-                        const healthPercent = enemy.health / enemy.maxHealth;
-                        ctx.fillStyle = '#f00';
-                        ctx.fillRect(screenX - healthBarWidth/2, 300 + size/2 + 5, healthBarWidth, 5);
-                        ctx.fillStyle = '#0f0';
-                        ctx.fillRect(screenX - healthBarWidth/2, 300 + size/2 + 5, healthBarWidth * healthPercent, 5);
+                // Paszcza
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(screenX, screenY + size/6, size/4, 0, Math.PI);
+                ctx.fill();
 
-                        // Słowo
-                        ctx.fillStyle = '#fff';
-                        ctx.font = `${Math.max(10, size/4)}px Courier New`;
-                        ctx.textAlign = 'center';
-                        ctx.fillText(enemy.word.en, screenX, 300 + size/2 + 20);
-                    }
-                }
+                // Pasek zdrowia
+                const healthBarWidth = size;
+                const healthPercent = enemy.health / enemy.maxHealth;
+                ctx.fillStyle = '#f00';
+                ctx.fillRect(screenX - healthBarWidth/2, screenY + size/2 + 5, healthBarWidth, 4);
+                ctx.fillStyle = '#0f0';
+                ctx.fillRect(screenX - healthBarWidth/2, screenY + size/2 + 5, healthBarWidth * healthPercent, 4);
+
+                // Słowo na potworze
+                ctx.fillStyle = '#fff';
+                ctx.font = `${Math.max(10, size/3)}px Courier New`;
+                ctx.textAlign = 'center';
+                ctx.fillText(enemy.word.en, screenX, screenY + size/2 + 20);
             });
 
             // Cząsteczki
@@ -609,44 +668,41 @@
                 ctx.globalAlpha = 1;
             });
 
-            // Broń (ulepszona przy wysokiej energii)
-            if (player.energy > 50) {
-                ctx.fillStyle = '#0f0';
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = '#0f0';
-            } else {
-                ctx.fillStyle = '#444';
-                ctx.shadowBlur = 0;
-            }
-            ctx.fillRect(300, 500, 200, 100);
-            ctx.fillStyle = player.energy > 50 ? '#0a0' : '#666';
-            ctx.fillRect(350, 480, 100, 30);
-            ctx.fillStyle = player.energy > 50 ? '#090' : '#888';
-            ctx.fillRect(380, 450, 40, 50);
-            ctx.shadowBlur = 0;
+            // Rysuj gracza jako punkt środkowy
+            ctx.fillStyle = player.energy > 50 ? '#0f0' : (player.energy < 0 ? '#f00' : '#00f');
+            ctx.beginPath();
+            ctx.arc(400, 300, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Celownik (gracz widzi od góry, ale nadal może "celować" myszką)
+            ctx.strokeStyle = '#f00';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(400 - 10, 300);
+            ctx.lineTo(400 + 10, 300);
+            ctx.moveTo(400, 300 - 10);
+            ctx.lineTo(400, 300 + 10);
+            ctx.stroke();
         }
 
-        function shoot() {
+        function shoot(mouseX, mouseY) {
             if (gameState !== 'playing') return;
 
             playSound(800, 0.1, 'square');
 
             let hitEnemy = null;
-            let minDist = Infinity;
 
+            // Sprawdź czy kliknięto na jakiegoś potwora
             enemies.forEach(enemy => {
-                const dx = enemy.x - player.x;
-                const dy = enemy.y - player.y;
+                const dx = mouseX - enemy.x;
+                const dy = mouseY - enemy.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                const angle = Math.atan2(dy, dx) - player.angle;
-                const screenX = 400 + Math.tan(angle) * 400;
-                const size = (enemy.size * 300) / dist;
 
-                if (Math.abs(screenX - 400) < size/2 && Math.abs(angle) < 0.3) {
-                    if (dist < minDist) {
-                        hitEnemy = enemy;
-                        minDist = dist;
-                    }
+                if (dist < enemy.size / 2) {
+                    hitEnemy = enemy;
                 }
             });
 
@@ -662,18 +718,16 @@
                         learnedWords.push(hitEnemy.word);
                     }
 
-                    const dx = hitEnemy.x - player.x;
-                    const dy = hitEnemy.y - player.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    const angle = Math.atan2(dy, dx) - player.angle;
-                    const screenX = 400 + Math.tan(angle) * 400;
+                    // Pokaż tłumaczenie w prawym górnym rogu
+                    showWordPopup(hitEnemy.word);
 
+                    // Cząsteczki eksplozji
                     for (let i = 0; i < 20; i++) {
                         particles.push({
-                            screenX: screenX + (Math.random() - 0.5) * 30,
-                            screenY: 300 + (Math.random() - 0.5) * 30,
-                            vx: (Math.random() - 0.5) * 10,
-                            vy: (Math.random() - 0.5) * 10,
+                            screenX: hitEnemy.x + (Math.random() - 0.5) * 30,
+                            screenY: hitEnemy.y + (Math.random() - 0.5) * 30,
+                            vx: (Math.random() - 0.5) * 5,
+                            vy: (Math.random() - 0.5) * 5,
                             size: Math.random() * 5 + 2,
                             color: hitEnemy.color,
                             life: 20
@@ -683,6 +737,16 @@
                     enemies.splice(enemies.indexOf(hitEnemy), 1);
                 }
             }
+        }
+
+        function showWordPopup(word) {
+            const popup = document.getElementById('word-popup');
+            popup.textContent = `${word.en} = ${word.pl}`;
+            popup.style.display = 'block';
+
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 2000);
         }
 
         function endLevel() {
@@ -800,6 +864,19 @@
             const energyEl = document.getElementById('energy');
             energyEl.textContent = `ENERGIA: ${player.energy}`;
             energyEl.className = player.energy >= 0 ? 'positive' : 'negative';
+
+            const hearts = '❤️'.repeat(player.lives);
+            document.getElementById('lives').textContent = `ŻYCIA: ${hearts}`;
+        }
+
+        function gameOver() {
+            gameState = 'gameover';
+            document.getElementById('game-over').querySelector('h1').textContent = 'GAME OVER';
+            document.getElementById('game-over').querySelector('h1').style.color = '#f00';
+            document.getElementById('final-score').textContent = `FINALNE PUNKTY: ${player.score}`;
+            document.getElementById('final-energy').textContent = `FINALNA ENERGIA: ${player.energy}`;
+            document.getElementById('game-over').style.display = 'block';
+            playSound(100, 1, 'sawtooth');
         }
 
         function victory() {
@@ -807,9 +884,11 @@
             document.getElementById('game-over').querySelector('h1').textContent = 'WYGRANA!';
             document.getElementById('game-over').querySelector('h1').style.color = '#0f0';
             document.getElementById('final-score').textContent = `FINALNE PUNKTY: ${player.score}`;
-            document.getElementById('final-energy').textContent = `FINALNA ENERGIA: ${player.energy}`;
+            document.getElementById('final-energy').textContent = `FINALNA ENERGIA: ${player.energy} | ŻYCIA: ${player.lives}`;
             document.getElementById('game-over').style.display = 'block';
             playSound(1000, 0.5);
+            playSound(1200, 0.5);
+            playSound(1400, 0.5);
         }
 
         function gameLoop() {
@@ -829,7 +908,12 @@
             keys[e.key.toLowerCase()] = false;
         });
 
-        canvas.addEventListener('click', shoot);
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            shoot(mouseX, mouseY);
+        });
 
         document.getElementById('startBtn').addEventListener('click', () => {
             document.getElementById('instructions').style.display = 'none';
@@ -838,7 +922,8 @@
                 y: 300,
                 angle: 0,
                 score: 0,
-                energy: 0
+                energy: 0,
+                lives: 3
             };
             currentLevel = 1;
             learnedWords = [];
