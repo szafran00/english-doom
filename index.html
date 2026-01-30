@@ -260,6 +260,38 @@
             100% { opacity: 0; transform: translateY(10px); }
         }
 
+        #minimap {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #0f0;
+            pointer-events: none;
+        }
+
+        #bonus-message {
+            position: absolute;
+            top: 150px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 255, 0, 0.9);
+            padding: 15px 30px;
+            border: 3px solid #0f0;
+            font-size: 24px;
+            color: #000;
+            font-weight: bold;
+            pointer-events: none;
+            display: none;
+            animation: bonusPulse 0.5s ease-in-out;
+        }
+
+        @keyframes bonusPulse {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.1); }
+        }
+
         #level-complete {
             position: absolute;
             top: 50%;
@@ -300,6 +332,10 @@
 
     <div id="word-popup"></div>
 
+    <canvas id="minimap" width="150" height="150"></canvas>
+
+    <div id="bonus-message"></div>
+
     <div id="level-complete">
         <h2>POZIOM UKOŃCZONY!</h2>
         <p>Czas na quiz...</p>
@@ -321,26 +357,30 @@
 
     <div id="instructions">
         <h1>ADAM ENGLISH DOOM</h1>
-        <p><strong>MISJA:</strong> Ukończ 10 poziomów i opanuj angielskie słówka!</p>
+        <p><strong>MISJA:</strong> Ukończ 10 poziomów i opanuj 75 angielskich słów!</p>
         <p><strong>STEROWANIE:</strong></p>
         <p>🖱️ MYSZ - Celowanie | 🔫 LEWY PRZYCISK - Strzał</p>
         <p>⌨️ W/S lub ↑/↓ - Ruch | ⌨️ A/D lub ←/→ - Obrót</p>
         <p><strong>ZASADY:</strong></p>
-        <p>• Każdy poziom trwa 30s - zabijaj potwory!</p>
-        <p>• Masz 3 ŻYCIA - strzelaj zanim potwory uciekną!</p>
+        <p>• Każdy poziom trwa 30s - zabijaj potwory FPS style!</p>
+        <p>• Masz 3 ŻYCIA - potwory atakują!</p>
+        <p>• 75 słów: 🍎 Żywność 👤 Ciało 🏃 Czasowniki</p>
         <p>• Po poziomie - quiz z 10 pytań (EN↔PL)</p>
         <p>• Dobra odpowiedź = +10 ENERGII | Zła = -10 ENERGII</p>
-        <p><strong>SYSTEM ENERGII:</strong></p>
-        <p>• UJEMNA energia: wolniejszy ruch, mocniejsze potwory</p>
-        <p>• DODATNIA energia: szybszy ruch, lepsza broń</p>
+        <p><strong>BONUSY ENERGII:</strong></p>
+        <p>• 50+ energia: ⚡ Szybszy ruch</p>
+        <p>• 80+ energia: 🔫 Silniejsza broń</p>
+        <p>• 100+ energia: 🔥 Maksymalna moc!</p>
         <button id="startBtn">START GAME</button>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
 
-        // Baza 50 słów
+        // Baza 75 słów - 25 żywności + 25 części ciała + 25 czasowników
         const vocabulary = {
             food: [
                 {en: "APPLE", pl: "JABŁKO"},
@@ -395,10 +435,37 @@
                 {en: "BLOOD", pl: "KREW"},
                 {en: "HAIR", pl: "WŁOSY"},
                 {en: "FACE", pl: "TWARZ"}
+            ],
+            verbs: [
+                {en: "GO", pl: "IŚĆ"},
+                {en: "TAKE", pl: "BRAĆ"},
+                {en: "MAKE", pl: "ROBIĆ"},
+                {en: "COME", pl: "PRZYCHODZIĆ"},
+                {en: "SEE", pl: "WIDZIEĆ"},
+                {en: "KNOW", pl: "WIEDZIEĆ"},
+                {en: "GET", pl: "DOSTAĆ"},
+                {en: "GIVE", pl: "DAWAĆ"},
+                {en: "USE", pl: "UŻYWAĆ"},
+                {en: "FIND", pl: "ZNAJDOWAĆ"},
+                {en: "TELL", pl: "MÓWIĆ"},
+                {en: "ASK", pl: "PYTAĆ"},
+                {en: "WORK", pl: "PRACOWAĆ"},
+                {en: "CALL", pl: "DZWONIĆ"},
+                {en: "TRY", pl: "PRÓBOWAĆ"},
+                {en: "NEED", pl: "POTRZEBOWAĆ"},
+                {en: "FEEL", pl: "CZUĆ"},
+                {en: "BECOME", pl: "STAWAĆ SIĘ"},
+                {en: "LEAVE", pl: "OPUSZCZAĆ"},
+                {en: "PUT", pl: "KŁAŚĆ"},
+                {en: "MEAN", pl: "ZNACZYĆ"},
+                {en: "KEEP", pl: "TRZYMAĆ"},
+                {en: "LET", pl: "POZWALAĆ"},
+                {en: "BEGIN", pl: "ZACZYNAĆ"},
+                {en: "HELP", pl: "POMAGAĆ"}
             ]
         };
 
-        const allWords = [...vocabulary.food, ...vocabulary.body];
+        const allWords = [...vocabulary.food, ...vocabulary.body, ...vocabulary.verbs];
 
         // Stan gry
         let gameState = 'menu';
@@ -469,27 +536,24 @@
         }
 
         function createEnemy() {
-            // Potwory w losowych pozycjach na ekranie (ale nie za blisko gracza)
-            let x, y;
-            do {
-                x = 100 + Math.random() * 600;
-                y = 100 + Math.random() * 400;
-            } while (Math.sqrt((x - player.x) ** 2 + (y - player.y) ** 2) < 150);
-
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 200 + Math.random() * 300;
             const word = allWords[Math.floor(Math.random() * allWords.length)];
 
+            let color = '#f80'; // food
+            if (vocabulary.body.includes(word)) color = '#f08'; // body
+            if (vocabulary.verbs.includes(word)) color = '#08f'; // verbs
+
             return {
-                x: x,
-                y: y,
+                x: player.x + Math.cos(angle) * distance,
+                y: player.y + Math.sin(angle) * distance,
                 word: word,
                 health: getEnemyHealth(),
                 maxHealth: getEnemyHealth(),
                 size: 30,
-                color: vocabulary.food.includes(word) ? '#f80' : '#f08',
-                speed: 0.5 + (currentLevel * 0.05),
-                moveToEdge: true, // Będą uciekać do krawędzi
-                targetX: x < 400 ? -100 : 900,
-                targetY: y
+                color: color,
+                speed: 0.3 + (currentLevel * 0.08) + Math.random() * 0.3,
+                attackTimer: 0
             };
         }
 
@@ -542,29 +606,30 @@
             player.x = Math.max(50, Math.min(750, player.x));
             player.y = Math.max(50, Math.min(550, player.y));
 
-            // Update wrogów - uciekają do krawędzi
+            // Update wrogów - atakują gracza
             for (let i = enemies.length - 1; i >= 0; i--) {
                 const enemy = enemies[i];
 
-                if (enemy.moveToEdge) {
-                    // Uciekaj do krawędzi
-                    const dx = enemy.targetX - enemy.x;
-                    const dy = enemy.targetY - enemy.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                // Ruch w kierunku gracza
+                const dx = player.x - enemy.x;
+                const dy = player.y - enemy.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
 
-                    if (dist > 10) {
-                        enemy.x += (dx / dist) * enemy.speed;
-                        enemy.y += (dy / dist) * enemy.speed;
-                    } else {
-                        // Dotarł do krawędzi - ucieka!
-                        player.lives--;
-                        enemies.splice(i, 1);
-                        playSound(150, 0.3, 'sawtooth');
+                if (dist > 50) {
+                    enemy.x += (dx / dist) * enemy.speed;
+                    enemy.y += (dy / dist) * enemy.speed;
+                }
 
-                        if (player.lives <= 0) {
-                            gameOver();
-                            return;
-                        }
+                // Atak gracza
+                enemy.attackTimer++;
+                if (dist < 60 && enemy.attackTimer > 60) {
+                    player.lives--;
+                    enemy.attackTimer = 0;
+                    playSound(100, 0.1, 'sawtooth');
+
+                    if (player.lives <= 0) {
+                        gameOver();
+                        return;
                     }
                 }
             }
@@ -578,11 +643,17 @@
                 if (p.life <= 0) particles.splice(i, 1);
             }
 
+            // Dodaj nowych wrogów
+            const maxEnemies = Math.min(3 + currentLevel, 8);
+            if (enemies.length < maxEnemies && Math.random() < 0.02) {
+                enemies.push(createEnemy());
+            }
+
             updateUI();
         }
 
         function drawGame() {
-            // Tło - gradient z efektem energii
+            // Tło - gradient z efektem energii (niebo/podłoga)
             const gradient = ctx.createLinearGradient(0, 0, 0, 600);
             if (player.energy > 50) {
                 gradient.addColorStop(0, '#0a2a0a');
@@ -600,62 +671,66 @@
             ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, 800, 600);
 
-            // Rysuj wszystkich wrogów - widok z góry, zawsze widoczni
+            // Rysuj wrogów (widok FPS pseudo-3D)
             enemies.forEach(enemy => {
-                // Prosta transformacja - wróg zawsze widoczny na ekranie
-                const screenX = enemy.x;
-                const screenY = enemy.y;
-                const size = enemy.size;
+                const dx = enemy.x - player.x;
+                const dy = enemy.y - player.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) - player.angle;
 
-                // Cień
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-                ctx.beginPath();
-                ctx.ellipse(screenX, screenY + 5, size/2, size/4, 0, 0, Math.PI * 2);
-                ctx.fill();
+                // Sprawdź czy wróg jest przed graczem
+                if (Math.abs(angle) < Math.PI / 2) {
+                    const screenX = 400 + Math.tan(angle) * 400;
+                    const size = (enemy.size * 300) / dist;
 
-                // Ciało potwora
-                ctx.fillStyle = enemy.color;
-                ctx.beginPath();
-                ctx.arc(screenX, screenY, size/2, 0, Math.PI * 2);
-                ctx.fill();
+                    if (size > 0 && screenX > -size && screenX < 800 + size) {
+                        // Cień
+                        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                        ctx.fillRect(screenX - size/2, 580 - size/4, size, size/4);
 
-                // Oczy
-                ctx.fillStyle = '#ff0';
-                ctx.beginPath();
-                ctx.arc(screenX - size/5, screenY - size/8, size/10, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(screenX + size/5, screenY - size/8, size/10, 0, Math.PI * 2);
-                ctx.fill();
+                        // Ciało potwora
+                        ctx.fillStyle = enemy.color;
+                        ctx.beginPath();
+                        ctx.arc(screenX, 300 - size/2, size/2, 0, Math.PI * 2);
+                        ctx.fill();
 
-                // Źrenice
-                ctx.fillStyle = '#f00';
-                ctx.beginPath();
-                ctx.arc(screenX - size/5, screenY - size/8, size/20, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(screenX + size/5, screenY - size/8, size/20, 0, Math.PI * 2);
-                ctx.fill();
+                        // Oczy
+                        ctx.fillStyle = '#ff0';
+                        ctx.beginPath();
+                        ctx.arc(screenX - size/4, 300 - size/2 - size/8, size/8, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(screenX + size/4, 300 - size/2 - size/8, size/8, 0, Math.PI * 2);
+                        ctx.fill();
 
-                // Paszcza
-                ctx.fillStyle = '#000';
-                ctx.beginPath();
-                ctx.arc(screenX, screenY + size/6, size/4, 0, Math.PI);
-                ctx.fill();
+                        // Źrenice
+                        ctx.fillStyle = '#f00';
+                        ctx.beginPath();
+                        ctx.arc(screenX - size/4, 300 - size/2 - size/8, size/16, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.beginPath();
+                        ctx.arc(screenX + size/4, 300 - size/2 - size/8, size/16, 0, Math.PI * 2);
+                        ctx.fill();
 
-                // Pasek zdrowia
-                const healthBarWidth = size;
-                const healthPercent = enemy.health / enemy.maxHealth;
-                ctx.fillStyle = '#f00';
-                ctx.fillRect(screenX - healthBarWidth/2, screenY + size/2 + 5, healthBarWidth, 4);
-                ctx.fillStyle = '#0f0';
-                ctx.fillRect(screenX - healthBarWidth/2, screenY + size/2 + 5, healthBarWidth * healthPercent, 4);
+                        // Paszcza
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(screenX - size/3, 300 - size/4, size * 2/3, size/6);
 
-                // Słowo na potworze
-                ctx.fillStyle = '#fff';
-                ctx.font = `${Math.max(10, size/3)}px Courier New`;
-                ctx.textAlign = 'center';
-                ctx.fillText(enemy.word.en, screenX, screenY + size/2 + 20);
+                        // Pasek zdrowia
+                        const healthBarWidth = size;
+                        const healthPercent = enemy.health / enemy.maxHealth;
+                        ctx.fillStyle = '#f00';
+                        ctx.fillRect(screenX - healthBarWidth/2, 300 + size/2 + 5, healthBarWidth, 5);
+                        ctx.fillStyle = '#0f0';
+                        ctx.fillRect(screenX - healthBarWidth/2, 300 + size/2 + 5, healthBarWidth * healthPercent, 5);
+
+                        // Słowo na potworze
+                        ctx.fillStyle = '#fff';
+                        ctx.font = `${Math.max(10, size/4)}px Courier New`;
+                        ctx.textAlign = 'center';
+                        ctx.fillText(enemy.word.en, screenX, 300 + size/2 + 20);
+                    }
+                }
             });
 
             // Cząsteczki
@@ -668,41 +743,89 @@
                 ctx.globalAlpha = 1;
             });
 
-            // Rysuj gracza jako punkt środkowy
-            ctx.fillStyle = player.energy > 50 ? '#0f0' : (player.energy < 0 ? '#f00' : '#00f');
-            ctx.beginPath();
-            ctx.arc(400, 300, 10, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
+            // Broń (ulepszona przy wysokiej energii)
+            if (player.energy > 50) {
+                ctx.fillStyle = '#0f0';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#0f0';
+            } else {
+                ctx.fillStyle = '#444';
+                ctx.shadowBlur = 0;
+            }
+            ctx.fillRect(300, 500, 200, 100);
+            ctx.fillStyle = player.energy > 50 ? '#0a0' : '#666';
+            ctx.fillRect(350, 480, 100, 30);
+            ctx.fillStyle = player.energy > 50 ? '#090' : '#888';
+            ctx.fillRect(380, 450, 40, 50);
+            ctx.shadowBlur = 0;
 
-            // Celownik (gracz widzi od góry, ale nadal może "celować" myszką)
-            ctx.strokeStyle = '#f00';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(400 - 10, 300);
-            ctx.lineTo(400 + 10, 300);
-            ctx.moveTo(400, 300 - 10);
-            ctx.lineTo(400, 300 + 10);
-            ctx.stroke();
+            // Minimap
+            drawMinimap();
         }
 
-        function shoot(mouseX, mouseY) {
+        function drawMinimap() {
+            minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            minimapCtx.fillRect(0, 0, 150, 150);
+
+            // Gracz w centrum
+            minimapCtx.fillStyle = player.energy > 50 ? '#0f0' : (player.energy < 0 ? '#f00' : '#00f');
+            minimapCtx.beginPath();
+            minimapCtx.arc(75, 75, 5, 0, Math.PI * 2);
+            minimapCtx.fill();
+
+            // Kierunek patrzenia
+            minimapCtx.strokeStyle = '#fff';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(75, 75);
+            minimapCtx.lineTo(75 + Math.cos(player.angle) * 20, 75 + Math.sin(player.angle) * 20);
+            minimapCtx.stroke();
+
+            // Potwory
+            enemies.forEach(enemy => {
+                const dx = enemy.x - player.x;
+                const dy = enemy.y - player.y;
+                const mapX = 75 + dx / 10;
+                const mapY = 75 + dy / 10;
+
+                if (mapX > 0 && mapX < 150 && mapY > 0 && mapY < 150) {
+                    minimapCtx.fillStyle = enemy.color;
+                    minimapCtx.beginPath();
+                    minimapCtx.arc(mapX, mapY, 3, 0, Math.PI * 2);
+                    minimapCtx.fill();
+                }
+            });
+
+            // Ramka
+            minimapCtx.strokeStyle = '#0f0';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.strokeRect(0, 0, 150, 150);
+        }
+
+        function shoot() {
             if (gameState !== 'playing') return;
 
             playSound(800, 0.1, 'square');
 
+            // Sprawdź trafienie (FPS style)
             let hitEnemy = null;
+            let minDist = Infinity;
 
-            // Sprawdź czy kliknięto na jakiegoś potwora
             enemies.forEach(enemy => {
-                const dx = mouseX - enemy.x;
-                const dy = mouseY - enemy.y;
+                const dx = enemy.x - player.x;
+                const dy = enemy.y - player.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) - player.angle;
 
-                if (dist < enemy.size / 2) {
-                    hitEnemy = enemy;
+                const screenX = 400 + Math.tan(angle) * 400;
+                const size = (enemy.size * 300) / dist;
+
+                // Sprawdź czy celownik jest na potworze
+                if (Math.abs(screenX - 400) < size/2 && Math.abs(angle) < 0.3) {
+                    if (dist < minDist) {
+                        hitEnemy = enemy;
+                        minDist = dist;
+                    }
                 }
             });
 
@@ -718,16 +841,22 @@
                         learnedWords.push(hitEnemy.word);
                     }
 
-                    // Pokaż tłumaczenie w prawym górnym rogu
+                    // Pokaż tłumaczenie
                     showWordPopup(hitEnemy.word);
+
+                    const dx = hitEnemy.x - player.x;
+                    const dy = hitEnemy.y - player.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx) - player.angle;
+                    const screenX = 400 + Math.tan(angle) * 400;
 
                     // Cząsteczki eksplozji
                     for (let i = 0; i < 20; i++) {
                         particles.push({
-                            screenX: hitEnemy.x + (Math.random() - 0.5) * 30,
-                            screenY: hitEnemy.y + (Math.random() - 0.5) * 30,
-                            vx: (Math.random() - 0.5) * 5,
-                            vy: (Math.random() - 0.5) * 5,
+                            screenX: screenX + (Math.random() - 0.5) * 30,
+                            screenY: 300 + (Math.random() - 0.5) * 30,
+                            vx: (Math.random() - 0.5) * 10,
+                            vy: (Math.random() - 0.5) * 10,
                             size: Math.random() * 5 + 2,
                             color: hitEnemy.color,
                             life: 20
@@ -735,6 +864,11 @@
                     }
 
                     enemies.splice(enemies.indexOf(hitEnemy), 1);
+
+                    // Dodaj nowego wroga
+                    if (enemies.length < Math.min(3 + currentLevel, 8)) {
+                        enemies.push(createEnemy());
+                    }
                 }
             }
         }
@@ -746,6 +880,16 @@
 
             setTimeout(() => {
                 popup.style.display = 'none';
+            }, 2000);
+        }
+
+        function showBonusMessage(message) {
+            const bonusMsg = document.getElementById('bonus-message');
+            bonusMsg.textContent = message;
+            bonusMsg.style.display = 'block';
+
+            setTimeout(() => {
+                bonusMsg.style.display = 'none';
             }, 2000);
         }
 
@@ -832,10 +976,26 @@
                 player.energy += 10;
                 player.score += 50;
                 playSound(800, 0.2);
+
+                // Sprawdź bonusy
+                if (player.energy === 50) {
+                    showBonusMessage('⚡ BONUS! Szybszy ruch!');
+                } else if (player.energy === 80) {
+                    showBonusMessage('🔫 SUPER BONUS! Silniejsza broń!');
+                } else if (player.energy >= 100) {
+                    showBonusMessage('🔥 ULTRA BONUS! Maksymalna moc!');
+                }
             } else {
                 btn.classList.add('wrong');
                 player.energy -= 10;
                 playSound(200, 0.3, 'sawtooth');
+
+                // Ostrzeżenia
+                if (player.energy === -20) {
+                    showBonusMessage('⚠️ UWAGA! Wolniejszy ruch!');
+                } else if (player.energy <= -50) {
+                    showBonusMessage('💀 KRYTYCZNIE! Bardzo mocne potwory!');
+                }
             }
 
             updateUI();
@@ -908,12 +1068,7 @@
             keys[e.key.toLowerCase()] = false;
         });
 
-        canvas.addEventListener('click', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            shoot(mouseX, mouseY);
-        });
+        canvas.addEventListener('click', shoot);
 
         document.getElementById('startBtn').addEventListener('click', () => {
             document.getElementById('instructions').style.display = 'none';
