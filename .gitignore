@@ -17,4 +17,6 @@ Thumbs.db
 # Claude
 .claude/
 
-.vercel
+# Environment variables
+.env
+.env.local

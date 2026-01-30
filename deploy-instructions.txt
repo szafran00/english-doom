@@ -1,0 +1,27 @@
+INSTRUKCJA WDROŻENIA NA VERCEL:
+
+1. Utwórz nowe repo na GitHub:
+   - Wejdź na: https://github.com/new
+   - Nazwa: english-doom (lub inna)
+   - NIE zaznaczaj "Initialize with README" (już masz)
+   - Kliknij "Create repository"
+
+2. Połącz lokalne repo z GitHub:
+   git remote add origin https://github.com/TWOJ_USERNAME/english-doom.git
+   git branch -M main
+   git push -u origin main
+
+3. Wdróż na Vercel:
+   - Wejdź na: https://vercel.com
+   - Kliknij "New Project"
+   - Import z GitHub
+   - Wybierz repo "english-doom"
+   - Kliknij "Deploy"
+
+4. Gotowe! Vercel automatycznie:
+   - Wykryje że to statyczna strona
+   - Wdroży ją
+   - Da Ci link (np. english-doom.vercel.app)
+
+WAŻNE: Plik english-doom.html będzie dostępny jako strona główna.
+Jeśli chcesz aby był dostępny od razu po wejściu na stronę, zmień nazwę na index.html
